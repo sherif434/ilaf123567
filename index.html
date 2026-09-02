@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إيلاف — متجر المنتجات المغربية الأصيلة</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <!-- الهيدر وشريط التنقل -->
+    <header class="main-header">
+        <div class="container header-container">
+            <div class="logo-area" onclick="showSection('shop')">
+                <span class="brand-name">إيلاف</span>
+            </div>
+
+            <nav class="nav-links">
+                <a href="#" class="nav-link active" onclick="showSection('shop')">الرئيسية</a>
+                <a href="#" class="nav-link" onclick="showSection('owner')">لوحة التحكم</a>
+            </nav>
+
+            <div class="header-actions">
+                <button class="icon-btn" id="themeToggle" onclick="toggleDarkMode()">🌙</button>
+                <button class="icon-btn" onclick="toggleCartDrawer()">
+                    🛒
+                    <span class="badge" id="cartCount">0</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- قسم المتجر الرئيسي -->
+    <main class="container section-padding" id="shopSection">
+        <section class="hero-banner mb-4">
+            <div class="hero-content">
+                <span class="hero-badge">أصالة وجودة عالية</span>
+                <h1>منتجات مغربية أصيلة 100%</h1>
+                <p>اكتشف تشكيلة إيلاف الفاخرة من العناية الطبيعية والمنتجات التقليدية</p>
+            </div>
+        </section>
+
+        <!-- شبكة المنتجات -->
+        <div class="section-header">
+            <h2>المنتجات المتاحة</h2>
+        </div>
+        <div class="products-grid" id="productsGrid">
+            <!-- يتم تحميل المنتجات بواسطة JavaScript -->
+        </div>
+    </main>
+
+    <!-- قسم تفاصيل المنتج -->
+    <main class="container section-padding hidden" id="productDetailSection">
+        <button class="btn btn-secondary mb-3" onclick="showSection('shop')">← العودة للمتجر</button>
+        <div class="product-detail-layout">
+            <div class="product-gallery-container">
+                <img id="detailMainImage" class="detail-main-image" src="" alt="صورة المنتج">
+                <div class="detail-thumbnails" id="detailThumbnails">
+                    <!-- الصور المصغرة المرفوعة تظهر هنا -->
+                </div>
+            </div>
+            <div class="product-info-detail">
+                <h2 id="detailTitle">اسم المنتج</h2>
+                <div class="detail-price mt-2" id="detailPrice">0 ر.س</div>
+                <p class="mt-3" id="detailDescription">وصف المنتج ينزل هنا...</p>
+                <div class="mt-4">
+                    <button class="btn btn-primary btn-lg" onclick="addToCartFromDetail()">إضافة إلى السلة 🛒</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- قسم لوحة تحكم المالك -->
+    <main class="container section-padding hidden" id="ownerSection">
+        <h2>لوحة إدارة المتجر</h2>
+        <div class="owner-tabs mt-3">
+            <button class="tab-btn active" onclick="switchOwnerTab('products')">إدارة المنتجات</button>
+            <button class="tab-btn" onclick="switchOwnerTab('orders')">جدول الطلبات والمراسلة</button>
+        </div>
+
+        <!-- تبويب إضافة المنتجات -->
+        <div id="ownerProductsTab">
+            <div class="auth-modal-card wide-modal mb-4 mt-3">
+                <h3>إضافة منتج جديد</h3>
+                <form id="addProductForm" onsubmit="handleAddProduct(event)" class="mt-3">
+                    <div class="form-group mb-3">
+                        <label>اسم المنتج:</label>
+                        <input type="text" id="prodTitle" required placeholder="مثال: زيت أرجان طبيعي">
+                    </div>
+                    <div class="form-group mb-3">
+                        <label>السعر (ر.س):</label>
+                        <input type="number" id="prodPrice" required placeholder="مثال: 150">
+                    </div>
+                    <div class="form-group mb-3">
+                        <label>وصف المنتج:</label>
+                        <textarea id="prodDesc" rows="3" required placeholder="وصف مميزات المنتج..."></textarea>
+                    </div>
+
+                    <!-- منطقة رفع عدة صور -->
+                    <div class="form-group mb-3">
+                        <label>صور المنتج (يمكنك رفع أكثر من صورة):</label>
+                        <div class="image-upload-wrapper" id="uploadZone">
+                            <input type="file" id="productImagesInput" multiple accept="image/*" class="image-upload-input">
+                            <div class="upload-icon-label">
+                                <span>📁 اضغط هنا أو اسحب الملفات لرفع الصور</span>
+                            </div>
+                        </div>
+                        <div id="galleryPreview" class="uploaded-gallery-preview"></div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block">حفظ ونشر المنتج</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- تبويب إدارة الطلبات والشات -->
+        <div id="ownerOrdersTab" class="hidden">
+            <table class="owner-products-table">
+                <thead>
+                    <tr>
+                        <th>رقم الطلب</th>
+                        <th>اسم العميل</th>
+                        <th>الإجمالي</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="ordersTableBody">
+                    <!-- يتم تحميل الطلبات ديناميكيًا -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- السلة التفاعلية (Drawer) -->
+    <div class="cart-drawer-overlay hidden" id="cartDrawer">
+        <div class="cart-drawer">
+            <div class="cart-header">
+                <h3>سلة المشتريات</h3>
+                <button class="close-btn" onclick="toggleCartDrawer()">&times;</button>
+            </div>
+            <div class="cart-items mt-3" id="cartItemsContainer">
+                <!-- عناصر السلة -->
+            </div>
+            <div class="cart-footer mt-auto">
+                <div class="cart-total-row">
+                    <span>الإجمالي:</span>
+                    <span id="cartTotal">0 ر.س</span>
+                </div>
+                <button class="btn btn-primary btn-block mt-3" onclick="checkout()">إتمام الطلب</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة المراسلة المنبثقة (Chat Modal) -->
+    <div id="chatModal" class="auth-modal-overlay hidden">
+        <div class="chat-modal-card">
+            <div class="chat-header">
+                <div class="chat-user-details">
+                    <h4 id="chatCustomerName">محادثة العميل</h4>
+                    <p id="chatOrderId">طلب #0000</p>
+                </div>
+                <button class="close-btn" onclick="closeChatModal()">&times;</button>
+            </div>
+            <div class="chat-body-messages" id="chatMessagesContainer">
+                <!-- فقاعات الرسائل تظهر هنا -->
+            </div>
+            <div class="chat-footer-input">
+                <input type="text" id="chatInputText" placeholder="اكتب رسالتك للعميل..." onkeypress="handleChatKeyPress(event)">
+                <button class="chat-send-btn" onclick="sendOwnerMessage()">إرسال</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
