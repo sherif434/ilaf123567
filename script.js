@@ -21,11 +21,86 @@ let currentUploadedImages = [];
 let activeChatOrderId = null;
 let currentDetailProduct = null;
 
+// ==========================================
+// نظام الملاك والصلاحيات
+// ==========================================
+const PERMISSIONS = [
+    { key: 'manage_products',     label: 'إضافة وتعديل المنتجات', desc: 'إنشاء منتجات جديدة ورفع صورها' },
+    { key: 'delete_products',     label: 'حذف المنتجات',          desc: 'إزالة أي منتج من المتجر' },
+    { key: 'view_orders',         label: 'عرض الطلبات',           desc: 'الاطلاع على جدول الطلبات والعملاء' },
+    { key: 'update_order_status', label: 'تغيير حالة الطلب',      desc: 'تحديث حالة الطلب (تجهيز، شحن، مكتمل)' },
+    { key: 'chat_customers',      label: 'مراسلة العملاء',        desc: 'فتح المحادثات والرد على العملاء' },
+    { key: 'manage_owners',       label: 'إدارة الملاك',          desc: 'إضافة ملاك جدد وتعديل صلاحياتهم' }
+];
+
+const ALL_PERMISSION_KEYS = PERMISSIONS.map(p => p.key);
+
+const ROLE_PRESETS = {
+    'مالك رئيسي':    ALL_PERMISSION_KEYS,
+    'مدير':          ['manage_products', 'delete_products', 'view_orders', 'update_order_status', 'chat_customers'],
+    'مسؤول منتجات':  ['manage_products', 'delete_products'],
+    'موظف مبيعات':   ['view_orders', 'update_order_status', 'chat_customers'],
+    'خدمة عملاء':    ['view_orders', 'chat_customers'],
+    'مخصص':          []
+};
+
+const ORDER_STATUSES = ['قيد الانتظار', 'قيد التجهيز', 'تم الشحن', 'مكتمل', 'ملغي'];
+
+const DEFAULT_OWNERS = [{
+    id: 'own-1',
+    name: 'المالك الرئيسي',
+    email: 'owner@ilaf.com',
+    password: '123456',
+    role: 'مالك رئيسي',
+    permissions: [...ALL_PERMISSION_KEYS],
+    active: true,
+    isSuper: true
+}];
+
+let owners = loadOwners();
+let currentOwnerId = localStorage.getItem('ilaf_current_owner') || owners[0].id;
+let editingOwnerId = null;
+
+function loadOwners() {
+    try {
+        const saved = JSON.parse(localStorage.getItem('ilaf_owners'));
+        if (Array.isArray(saved) && saved.length) return saved;
+    } catch (e) { /* تجاهل البيانات التالفة */ }
+    return JSON.parse(JSON.stringify(DEFAULT_OWNERS));
+}
+
+function saveOwners() {
+    localStorage.setItem('ilaf_owners', JSON.stringify(owners));
+    localStorage.setItem('ilaf_current_owner', currentOwnerId);
+}
+
+function getCurrentOwner() {
+    return owners.find(o => o.id === currentOwnerId) || owners[0];
+}
+
+// التحقق من الصلاحية
+function hasPermission(key) {
+    const me = getCurrentOwner();
+    if (!me || !me.active) return false;
+    if (me.isSuper) return true;
+    return (me.permissions || []).includes(key);
+}
+
+function requirePermission(key, message) {
+    if (hasPermission(key)) return true;
+    alert(message || '🔒 لا تملك صلاحية تنفيذ هذا الإجراء.');
+    return false;
+}
+
 // تشغيل النظام فور جاهزية الصفحة
 window.addEventListener('DOMContentLoaded', () => {
     renderProducts();
     setupImageUpload();
+    renderOwnerSwitcher();
+    renderOwnersTable();
+    renderOwnerProductsTable();
     renderOrdersTable();
+    applyPermissions();
 });
 
 // التنقل بين الأقسام
@@ -115,6 +190,7 @@ function removeImage(index) {
 // إضافة منتج جديد
 function handleAddProduct(e) {
     e.preventDefault();
+    if (!requirePermission('manage_products', '🔒 لا تملك صلاحية إضافة المنتجات.')) return;
     if (currentUploadedImages.length === 0) {
         alert("يرجى رفع صورة واحدة على الأقل للمنتج!");
         return;
@@ -130,7 +206,8 @@ function handleAddProduct(e) {
 
     products.push(newProduct);
     renderProducts();
-    
+    renderOwnerProductsTable();
+
     document.getElementById('addProductForm').reset();
     currentUploadedImages = [];
     renderGalleryPreview();
@@ -177,28 +254,96 @@ function checkout() {
 
 // إدارة لوحة التحكم
 function switchOwnerTab(tab) {
+    const tabPerms = { products: 'manage_products', orders: 'view_orders', owners: 'manage_owners' };
+    if (!hasPermission(tabPerms[tab])) {
+        alert('🔒 لا تملك صلاحية الدخول إلى هذا القسم.');
+        return;
+    }
+
     document.getElementById('ownerProductsTab').classList.toggle('hidden', tab !== 'products');
     document.getElementById('ownerOrdersTab').classList.toggle('hidden', tab !== 'orders');
+    document.getElementById('ownerOwnersTab').classList.toggle('hidden', tab !== 'owners');
+
+    document.getElementById('tabBtnProducts').classList.toggle('active', tab === 'products');
+    document.getElementById('tabBtnOrders').classList.toggle('active', tab === 'orders');
+    document.getElementById('tabBtnOwners').classList.toggle('active', tab === 'owners');
 }
 
 function renderOrdersTable() {
     const tbody = document.getElementById('ordersTableBody');
     if (!tbody) return;
+
+    if (!orders.length) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-row">لا توجد طلبات بعد.</td></tr>`;
+        return;
+    }
+
+    const canChat = hasPermission('chat_customers');
+    const canUpdate = hasPermission('update_order_status');
+
     tbody.innerHTML = orders.map(o => `
         <tr>
             <td>#${o.id}</td>
             <td>${o.customerName}</td>
             <td>${o.total} ر.س</td>
-            <td>${o.status}</td>
             <td>
-                <button class="btn-chat-owner" onclick="openOwnerChat('${o.id}', '${o.customerName}')">💬 مراسلة العميل</button>
+                ${canUpdate
+                    ? `<select class="status-select" onchange="updateOrderStatus('${o.id}', this.value)">
+                          ${ORDER_STATUSES.map(s => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}
+                       </select>`
+                    : `<span class="perm-chip on">${o.status}</span>`}
+            </td>
+            <td>
+                ${canChat
+                    ? `<button class="btn-chat-owner" onclick="openOwnerChat('${o.id}', '${o.customerName}')">💬 مراسلة العميل</button>`
+                    : `<span class="perm-chip">🔒 لا تملك صلاحية المراسلة</span>`}
             </td>
         </tr>
     `).join('');
 }
 
+function updateOrderStatus(orderId, status) {
+    if (!requirePermission('update_order_status')) return renderOrdersTable();
+    const order = orders.find(o => o.id === orderId);
+    if (order) order.status = status;
+}
+
+// جدول المنتجات في لوحة التحكم
+function renderOwnerProductsTable() {
+    const tbody = document.getElementById('ownerProductsTableBody');
+    if (!tbody) return;
+
+    if (!products.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="empty-row">لا توجد منتجات بعد.</td></tr>`;
+        return;
+    }
+
+    const canDelete = hasPermission('delete_products');
+    tbody.innerHTML = products.map(p => `
+        <tr>
+            <td><img class="table-thumb" src="${p.images[0]}" alt="${p.title}"></td>
+            <td>${p.title}</td>
+            <td>${p.price} ر.س</td>
+            <td>
+                ${canDelete
+                    ? `<button class="mini-btn danger" onclick="deleteProduct(${p.id})">🗑️ حذف</button>`
+                    : `<span class="perm-chip">🔒 لا تملك صلاحية الحذف</span>`}
+            </td>
+        </tr>
+    `).join('');
+}
+
+function deleteProduct(id) {
+    if (!requirePermission('delete_products', '🔒 لا تملك صلاحية حذف المنتجات.')) return;
+    if (!confirm('هل تريد حذف هذا المنتج نهائيًا؟')) return;
+    products = products.filter(p => p.id !== id);
+    renderProducts();
+    renderOwnerProductsTable();
+}
+
 // المراسلة والشات
 function openOwnerChat(orderId, customerName) {
+    if (!requirePermission('chat_customers', '🔒 لا تملك صلاحية مراسلة العملاء.')) return;
     activeChatOrderId = orderId;
     document.getElementById('chatCustomerName').innerText = customerName;
     document.getElementById('chatOrderId').innerText = `طلب #${orderId}`;
@@ -243,4 +388,244 @@ function handleChatKeyPress(e) {
 
 function toggleDarkMode() {
     document.body.classList.toggle('dark-mode');
+}
+// ==========================================
+// واجهة إدارة الملاك والصلاحيات
+// ==========================================
+
+// تطبيق الصلاحيات على واجهة لوحة التحكم
+function applyPermissions() {
+    const me = getCurrentOwner();
+    if (!me) return;
+
+    // شريط الحساب الحالي
+    document.getElementById('currentOwnerAvatar').textContent = me.name.trim().charAt(0);
+    document.getElementById('currentOwnerName').textContent = me.name;
+    document.getElementById('currentOwnerPerms').innerHTML =
+        `<span class="role-badge ${me.isSuper ? 'super' : ''}">${me.role}</span>` +
+        (me.active ? '' : ' <span class="status-pill inactive">موقوف</span>') +
+        PERMISSIONS.filter(p => hasPermission(p.key)).map(p => `<span class="perm-chip on">${p.label}</span>`).join('');
+
+    // إظهار/إخفاء التبويبات حسب الصلاحية
+    const tabMap = {
+        tabBtnProducts: 'manage_products',
+        tabBtnOrders: 'view_orders',
+        tabBtnOwners: 'manage_owners'
+    };
+    let firstAllowed = null;
+    Object.keys(tabMap).forEach(btnId => {
+        const allowed = hasPermission(tabMap[btnId]);
+        document.getElementById(btnId).classList.toggle('hidden', !allowed);
+        if (allowed && !firstAllowed) firstAllowed = btnId;
+    });
+
+    // إخفاء نموذج إضافة منتج لمن لا يملك الصلاحية
+    const addForm = document.getElementById('addProductForm');
+    if (addForm) addForm.closest('.auth-modal-card').classList.toggle('hidden', !hasPermission('manage_products'));
+
+    // فتح أول تبويب مسموح به
+    document.getElementById('ownerProductsTab').classList.add('hidden');
+    document.getElementById('ownerOrdersTab').classList.add('hidden');
+    document.getElementById('ownerOwnersTab').classList.add('hidden');
+
+    const noAccess = document.getElementById('noAccessBox');
+    if (!firstAllowed) {
+        noAccess.classList.remove('hidden');
+    } else {
+        noAccess.classList.add('hidden');
+        const tabName = { tabBtnProducts: 'products', tabBtnOrders: 'orders', tabBtnOwners: 'owners' }[firstAllowed];
+        switchOwnerTab(tabName);
+    }
+
+    renderOwnerProductsTable();
+    renderOrdersTable();
+}
+
+// قائمة تبديل الحساب (لتجربة الصلاحيات)
+function renderOwnerSwitcher() {
+    const select = document.getElementById('ownerSwitcher');
+    if (!select) return;
+    select.innerHTML = owners.map(o =>
+        `<option value="${o.id}" ${o.id === currentOwnerId ? 'selected' : ''}>${o.name} — ${o.role}${o.active ? '' : ' (موقوف)'}</option>`
+    ).join('');
+}
+
+function switchCurrentOwner(id) {
+    currentOwnerId = id;
+    saveOwners();
+    applyPermissions();
+    renderOwnersTable();
+}
+
+// جدول الملاك
+function renderOwnersTable() {
+    const tbody = document.getElementById('ownersTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = owners.map(o => {
+        const perms = o.isSuper ? ALL_PERMISSION_KEYS : (o.permissions || []);
+        const chips = perms.length
+            ? PERMISSIONS.filter(p => perms.includes(p.key)).map(p => `<span class="perm-chip on">${p.label}</span>`).join('')
+            : '<span class="perm-chip">بدون صلاحيات</span>';
+
+        return `
+        <tr>
+            <td>
+                <div class="owner-cell">
+                    <span class="cu-avatar">${o.name.trim().charAt(0)}</span>
+                    <div>
+                        <strong>${o.name}</strong>
+                        ${o.id === currentOwnerId ? '<div class="muted-text">(الحساب الحالي)</div>' : ''}
+                    </div>
+                </div>
+            </td>
+            <td>${o.email}</td>
+            <td><span class="role-badge ${o.isSuper ? 'super' : ''}">${o.role}</span></td>
+            <td style="max-width:280px;">${chips}</td>
+            <td><span class="status-pill ${o.active ? 'active' : 'inactive'}">${o.active ? 'مفعّل' : 'موقوف'}</span></td>
+            <td>
+                <div class="table-actions">
+                    <button class="mini-btn" onclick="openOwnerModal('${o.id}')">✏️ الصلاحيات</button>
+                    ${o.isSuper ? '' : `
+                        <button class="mini-btn warn" onclick="toggleOwnerActive('${o.id}')">${o.active ? '⏸️ إيقاف' : '▶️ تفعيل'}</button>
+                        <button class="mini-btn danger" onclick="deleteOwner('${o.id}')">🗑️ حذف</button>
+                    `}
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// نافذة إضافة / تعديل مالك
+function openOwnerModal(id = null) {
+    if (!requirePermission('manage_owners', '🔒 لا تملك صلاحية إدارة الملاك.')) return;
+
+    editingOwnerId = id;
+    const owner = id ? owners.find(o => o.id === id) : null;
+
+    document.getElementById('ownerModalTitle').textContent = owner ? `تعديل صلاحيات: ${owner.name}` : 'إضافة مالك جديد';
+    document.getElementById('ownerName').value = owner ? owner.name : '';
+    document.getElementById('ownerEmail').value = owner ? owner.email : '';
+    document.getElementById('ownerPassword').value = '';
+    document.getElementById('ownerPassword').placeholder = owner ? 'اتركها فارغة لعدم التغيير' : 'كلمة مرور الدخول';
+    document.getElementById('ownerActive').checked = owner ? owner.active : true;
+
+    // قائمة الأدوار
+    const roleSelect = document.getElementById('ownerRole');
+    roleSelect.innerHTML = Object.keys(ROLE_PRESETS).map(r =>
+        `<option value="${r}" ${owner && owner.role === r ? 'selected' : ''}>${r}</option>`
+    ).join('');
+    if (!owner) roleSelect.value = 'موظف مبيعات';
+
+    renderPermissionCheckboxes(owner ? (owner.permissions || []) : ROLE_PRESETS[roleSelect.value]);
+    document.getElementById('ownerFormModal').classList.remove('hidden');
+}
+
+function closeOwnerModal() {
+    document.getElementById('ownerFormModal').classList.add('hidden');
+    editingOwnerId = null;
+}
+
+function renderPermissionCheckboxes(selected = []) {
+    document.getElementById('permissionsGrid').innerHTML = PERMISSIONS.map(p => `
+        <label class="perm-item">
+            <input type="checkbox" class="perm-check" value="${p.key}" ${selected.includes(p.key) ? 'checked' : ''} onchange="markCustomRole()">
+            <span>
+                <span class="perm-title">${p.label}</span>
+                <span class="perm-desc">${p.desc}</span>
+            </span>
+        </label>
+    `).join('');
+}
+
+function applyRolePreset(role) {
+    if (role === 'مخصص') return;
+    renderPermissionCheckboxes(ROLE_PRESETS[role] || []);
+}
+
+function markCustomRole() {
+    const selected = getSelectedPermissions().sort().join(',');
+    const roleSelect = document.getElementById('ownerRole');
+    const match = Object.keys(ROLE_PRESETS).find(r => [...ROLE_PRESETS[r]].sort().join(',') === selected);
+    roleSelect.value = match || 'مخصص';
+}
+
+function toggleAllPermissions(state) {
+    document.querySelectorAll('.perm-check').forEach(cb => cb.checked = state);
+    markCustomRole();
+}
+
+function getSelectedPermissions() {
+    return Array.from(document.querySelectorAll('.perm-check:checked')).map(cb => cb.value);
+}
+
+// حفظ المالك (إضافة أو تعديل)
+function handleSaveOwner(e) {
+    e.preventDefault();
+    if (!requirePermission('manage_owners')) return;
+
+    const name = document.getElementById('ownerName').value.trim();
+    const email = document.getElementById('ownerEmail').value.trim().toLowerCase();
+    const password = document.getElementById('ownerPassword').value;
+    const role = document.getElementById('ownerRole').value;
+    const active = document.getElementById('ownerActive').checked;
+    const permissions = getSelectedPermissions();
+
+    // منع تكرار البريد الإلكتروني
+    if (owners.some(o => o.email.toLowerCase() === email && o.id !== editingOwnerId)) {
+        alert('⚠️ هذا البريد الإلكتروني مستخدم بالفعل لمالك آخر.');
+        return;
+    }
+
+    if (editingOwnerId) {
+        const owner = owners.find(o => o.id === editingOwnerId);
+        if (owner.isSuper && (!active || permissions.length < ALL_PERMISSION_KEYS.length)) {
+            alert('⚠️ لا يمكن إنقاص صلاحيات المالك الرئيسي أو إيقاف حسابه.');
+            return;
+        }
+        Object.assign(owner, { name, email, role, active, permissions });
+        if (password) owner.password = password;
+        alert('✅ تم تحديث بيانات وصلاحيات المالك.');
+    } else {
+        if (!password) {
+            alert('⚠️ من فضلك أدخل كلمة مرور للمالك الجديد.');
+            return;
+        }
+        owners.push({
+            id: 'own-' + Date.now(),
+            name, email, password, role, active, permissions,
+            isSuper: false
+        });
+        alert(`✅ تمت إضافة المالك "${name}" بنجاح بصلاحيات ${permissions.length} عنصر.`);
+    }
+
+    saveOwners();
+    closeOwnerModal();
+    renderOwnersTable();
+    renderOwnerSwitcher();
+    applyPermissions();
+}
+
+function toggleOwnerActive(id) {
+    if (!requirePermission('manage_owners')) return;
+    const owner = owners.find(o => o.id === id);
+    if (!owner || owner.isSuper) return;
+    owner.active = !owner.active;
+    saveOwners();
+    renderOwnersTable();
+    renderOwnerSwitcher();
+    if (id === currentOwnerId) applyPermissions();
+}
+
+function deleteOwner(id) {
+    if (!requirePermission('manage_owners')) return;
+    const owner = owners.find(o => o.id === id);
+    if (!owner || owner.isSuper) return alert('⚠️ لا يمكن حذف المالك الرئيسي.');
+    if (id === currentOwnerId) return alert('⚠️ لا يمكنك حذف الحساب الذي تستخدمه حاليًا.');
+    if (!confirm(`هل تريد حذف المالك "${owner.name}" نهائيًا؟`)) return;
+
+    owners = owners.filter(o => o.id !== id);
+    saveOwners();
+    renderOwnersTable();
+    renderOwnerSwitcher();
 }

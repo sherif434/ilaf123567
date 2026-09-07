@@ -74,9 +74,32 @@
     <!-- قسم لوحة تحكم المالك -->
     <main class="container section-padding hidden" id="ownerSection">
         <h2>لوحة إدارة المتجر</h2>
+
+        <!-- شريط الحساب الحالي -->
+        <div class="current-user-bar mt-3">
+            <div class="cu-info">
+                <span class="cu-avatar" id="currentOwnerAvatar">م</span>
+                <div>
+                    <div class="cu-name">مسجّل الدخول كـ: <strong id="currentOwnerName">—</strong></div>
+                    <div class="cu-perms" id="currentOwnerPerms"></div>
+                </div>
+            </div>
+            <div class="cu-switch">
+                <label for="ownerSwitcher">تبديل الحساب (للتجربة):</label>
+                <select id="ownerSwitcher" onchange="switchCurrentOwner(this.value)"></select>
+            </div>
+        </div>
+
         <div class="owner-tabs mt-3">
-            <button class="tab-btn active" onclick="switchOwnerTab('products')">إدارة المنتجات</button>
-            <button class="tab-btn" onclick="switchOwnerTab('orders')">جدول الطلبات والمراسلة</button>
+            <button class="tab-btn active" id="tabBtnProducts" onclick="switchOwnerTab('products')">إدارة المنتجات</button>
+            <button class="tab-btn" id="tabBtnOrders" onclick="switchOwnerTab('orders')">جدول الطلبات والمراسلة</button>
+            <button class="tab-btn" id="tabBtnOwners" onclick="switchOwnerTab('owners')">👥 إدارة الملاك والصلاحيات</button>
+        </div>
+
+        <!-- رسالة عند عدم وجود صلاحيات -->
+        <div id="noAccessBox" class="no-access-box hidden">
+            <span>🔒</span>
+            <p>لا توجد لديك أي صلاحيات مفعّلة على هذا الحساب. تواصل مع المالك الرئيسي.</p>
         </div>
 
         <!-- تبويب إضافة المنتجات -->
@@ -112,6 +135,22 @@
                     <button type="submit" class="btn btn-primary btn-block">حفظ ونشر المنتج</button>
                 </form>
             </div>
+
+            <!-- جدول المنتجات الحالية -->
+            <div class="section-header-row">
+                <h3>المنتجات الحالية</h3>
+            </div>
+            <table class="owner-products-table">
+                <thead>
+                    <tr>
+                        <th>الصورة</th>
+                        <th>اسم المنتج</th>
+                        <th>السعر</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="ownerProductsTableBody"></tbody>
+            </table>
         </div>
 
         <!-- تبويب إدارة الطلبات والشات -->
@@ -131,7 +170,86 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- تبويب إدارة الملاك والصلاحيات -->
+        <div id="ownerOwnersTab" class="hidden">
+            <div class="section-header-row">
+                <div>
+                    <h3>الملاك والمشرفون</h3>
+                    <p class="muted-text">أضف ملاكًا جددًا وحدّد صلاحية كل واحد منهم بدقة.</p>
+                </div>
+                <button class="btn btn-primary" onclick="openOwnerModal()">➕ إضافة مالك جديد</button>
+            </div>
+            <table class="owner-products-table">
+                <thead>
+                    <tr>
+                        <th>المالك</th>
+                        <th>البريد الإلكتروني</th>
+                        <th>الدور</th>
+                        <th>الصلاحيات</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="ownersTableBody">
+                    <!-- يتم تحميل الملاك ديناميكيًا -->
+                </tbody>
+            </table>
+        </div>
     </main>
+
+    <!-- نافذة إضافة / تعديل مالك -->
+    <div id="ownerFormModal" class="auth-modal-overlay hidden">
+        <div class="auth-modal-card wide-modal owner-modal-card">
+            <div class="modal-head">
+                <h3 id="ownerModalTitle">إضافة مالك جديد</h3>
+                <button class="close-btn" onclick="closeOwnerModal()">&times;</button>
+            </div>
+            <form id="ownerForm" onsubmit="handleSaveOwner(event)" class="mt-3">
+                <div class="form-row">
+                    <div class="form-group mb-3">
+                        <label>اسم المالك:</label>
+                        <input type="text" id="ownerName" required placeholder="مثال: سارة العلوي">
+                    </div>
+                    <div class="form-group mb-3">
+                        <label>البريد الإلكتروني:</label>
+                        <input type="email" id="ownerEmail" required placeholder="name@ilaf.com">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group mb-3">
+                        <label>كلمة المرور:</label>
+                        <input type="password" id="ownerPassword" placeholder="اتركها فارغة لعدم التغيير">
+                    </div>
+                    <div class="form-group mb-3">
+                        <label>الدور:</label>
+                        <select id="ownerRole" onchange="applyRolePreset(this.value)"></select>
+                    </div>
+                </div>
+
+                <div class="form-group mb-3">
+                    <div class="perm-head">
+                        <label>الصلاحيات الممنوحة:</label>
+                        <div class="perm-quick">
+                            <button type="button" class="link-btn" onclick="toggleAllPermissions(true)">تحديد الكل</button>
+                            <button type="button" class="link-btn" onclick="toggleAllPermissions(false)">إلغاء الكل</button>
+                        </div>
+                    </div>
+                    <div class="permissions-grid" id="permissionsGrid"></div>
+                </div>
+
+                <label class="switch-row">
+                    <input type="checkbox" id="ownerActive" checked>
+                    <span>الحساب مفعّل (يستطيع الدخول للوحة التحكم)</span>
+                </label>
+
+                <div class="modal-actions mt-3">
+                    <button type="button" class="btn btn-secondary" onclick="closeOwnerModal()">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ المالك</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- السلة التفاعلية (Drawer) -->
     <div class="cart-drawer-overlay hidden" id="cartDrawer">
